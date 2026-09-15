@@ -1,0 +1,6 @@
+{
+  "name": "Parking Management System",
+  "description": "A modern, clean and responsive Parking Management System with real-time slot visualization, vehicle analytics, and overall occupancy dashboards.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
