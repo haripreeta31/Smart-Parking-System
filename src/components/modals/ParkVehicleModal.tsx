@@ -4,17 +4,17 @@ import {
   Car,
   Bus,
   Bike,
+  Briefcase,
+  Users,
   CheckCircle2,
   AlertCircle,
-  Zap,
-  Sparkles,
-  Layers,
 } from 'lucide-react';
 import { useParking } from '../../context/ParkingContext';
-import { VehicleType, ParkingSlot } from '../../types';
+import type { VehicleType } from '../../types';
 
 export const ParkVehicleModal: React.FC = () => {
   const {
+    currentUser,
     isParkModalOpen,
     setIsParkModalOpen,
     preselectedTypeForParkModal,
@@ -24,6 +24,7 @@ export const ParkVehicleModal: React.FC = () => {
     slots,
     parkVehicle,
     settings,
+    setActiveTab,
   } = useParking();
 
   const [type, setType] = useState<VehicleType>('car');
@@ -33,21 +34,34 @@ export const ParkVehicleModal: React.FC = () => {
   const [driverName, setDriverName] = useState<string>('');
   const [driverPhone, setDriverPhone] = useState<string>('');
   const [error, setError] = useState<string>('');
+  const [submitting, setSubmitting] = useState<boolean>(false);
 
   useEffect(() => {
-    if (preselectedTypeForParkModal) {
-      setType(preselectedTypeForParkModal);
+    if (isParkModalOpen) {
+      setDriverName(currentUser.name);
+      setDriverPhone(currentUser.phone);
+      if (!licensePlate) {
+        setLicensePlate(currentUser.defaultPlate);
+      }
+      if (preselectedTypeForParkModal) {
+        setType(preselectedTypeForParkModal);
+      } else {
+        setType(currentUser.defaultVehicleType);
+      }
+      setError('');
     }
-  }, [preselectedTypeForParkModal]);
+  }, [isParkModalOpen, preselectedTypeForParkModal, currentUser]);
 
-  // Available slots for selected vehicle type
-  const availableSlots = React.useMemo(() => {
-    return slots.filter((s) => s.vehicleType === type && s.status === 'available');
-  }, [slots, type]);
+  const availableSlots = React.useMemo(
+    () => slots.filter((s) => s.vehicleType === type && s.status === 'available'),
+    [slots, type]
+  );
 
   useEffect(() => {
     if (preselectedSlotIdForParkModal) {
-      const match = slots.find((s) => s.id === preselectedSlotIdForParkModal && s.status === 'available');
+      const match = slots.find(
+        (s) => s.id === preselectedSlotIdForParkModal && s.status === 'available'
+      );
       if (match) {
         setSlotId(match.id);
         setType(match.vehicleType);
@@ -56,45 +70,42 @@ export const ParkVehicleModal: React.FC = () => {
     }
     if (availableSlots.length > 0 && (!slotId || !availableSlots.some((s) => s.id === slotId))) {
       setSlotId(availableSlots[0].id);
+    } else if (availableSlots.length === 0) {
+      setSlotId('');
     }
   }, [availableSlots, preselectedSlotIdForParkModal, slots, slotId]);
 
   if (!isParkModalOpen) return null;
 
-  const handleGenerateSamplePlate = () => {
+  const handleAutoSample = () => {
     const letters = 'ABCDEFGHJKLMNPRSTUVWXYZ';
-    const prefix = type === 'car' ? 'CA' : type === 'bus' ? 'BU' : 'BK';
+    const prefixMap: Record<VehicleType, string> = {
+      car: 'CA',
+      bike: 'BK',
+      staff: 'ST',
+      visitor: 'VS',
+      bus: 'BUS',
+    };
     const r1 = letters[Math.floor(Math.random() * letters.length)];
     const r2 = letters[Math.floor(Math.random() * letters.length)];
     const num = Math.floor(1000 + Math.random() * 9000);
-    setLicensePlate(`${prefix}-${num}-${r1}${r2}`);
-    if (!driverName) setDriverName('Alexander Morgan');
-    if (!driverPhone) setDriverPhone('+1 (555) 349-2180');
-    if (!model) {
-      setModel(
-        type === 'car'
-          ? 'Tesla Model Y (Deep Blue)'
-          : type === 'bus'
-          ? 'Mercedes-Benz Tourismo Coach'
-          : 'Kawasaki Z900 (Metallic Spark)'
-      );
-    }
+    setLicensePlate(`${prefixMap[type]}-${num}-${r1}${r2}`);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-
     if (!licensePlate.trim()) {
-      setError('Please enter a vehicle license plate number.');
+      setError('Please enter a valid vehicle license plate.');
       return;
     }
     if (!slotId) {
-      setError('Please choose an available parking slot.');
+      setError('No available slot selected.');
       return;
     }
 
-    const result = parkVehicle({
+    setSubmitting(true);
+    const result = await parkVehicle({
       type,
       slotId,
       licensePlate,
@@ -102,35 +113,35 @@ export const ParkVehicleModal: React.FC = () => {
       driverName: driverName || undefined,
       driverPhone: driverPhone || undefined,
     });
+    setSubmitting(false);
 
     if (result.success) {
       setIsParkModalOpen(false);
       setPreselectedTypeForParkModal(null);
       setPreselectedSlotIdForParkModal(null);
-      setLicensePlate('');
       setModel('');
-      setDriverName('');
-      setDriverPhone('');
     } else {
       setError(result.message);
     }
   };
 
-  const rate =
-    type === 'car'
-      ? settings.carHourlyRate
-      : type === 'bus'
-      ? settings.busHourlyRate
-      : settings.bikeHourlyRate;
+  const categories: Array<{ id: VehicleType; label: string; icon: React.ElementType; rate: number }> = [
+    { id: 'car', label: 'Car', icon: Car, rate: settings.carHourlyRate },
+    { id: 'bike', label: 'Bike', icon: Bike, rate: settings.bikeHourlyRate },
+    { id: 'staff', label: 'Staff', icon: Briefcase, rate: settings.staffHourlyRate },
+    { id: 'visitor', label: 'Visitor', icon: Users, rate: settings.visitorHourlyRate },
+    { id: 'bus', label: 'Bus', icon: Bus, rate: settings.busHourlyRate },
+  ];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
-      <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl max-w-lg w-full overflow-hidden animate-in zoom-in-95">
-        {/* Modal Header */}
-        <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/70">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60">
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-xl max-w-lg w-full overflow-hidden">
+        <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50">
           <div>
-            <h3 className="text-lg font-bold text-slate-900">Check-in / Park Vehicle</h3>
-            <p className="text-xs text-slate-500">Assign an available bay and issue a parking ticket</p>
+            <h3 className="text-base font-bold text-slate-900">Walk-In Check-In &amp; Slot Assignment</h3>
+            <p className="text-xs text-slate-500">
+              Saves your assigned slot automatically to Find My Vehicle
+            </p>
           </div>
           <button
             onClick={() => {
@@ -144,170 +155,152 @@ export const ParkVehicleModal: React.FC = () => {
           </button>
         </div>
 
-        {/* Modal Body */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+        <form onSubmit={handleSubmit} className="p-5 space-y-4">
           {error && (
-            <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold flex items-center gap-2">
+            <div className="p-3 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold flex items-center gap-2">
               <AlertCircle className="w-4 h-4 shrink-0" />
               <span>{error}</span>
             </div>
           )}
 
-          {/* Vehicle Type Selection */}
           <div>
-            <label className="text-xs font-bold text-slate-700 block mb-1.5">Select Vehicle Classification</label>
-            <div className="grid grid-cols-3 gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setType('car');
-                  setSlotId('');
-                }}
-                className={`p-3 rounded-xl border flex flex-col items-center gap-1.5 transition-all text-xs font-bold ${
-                  type === 'car'
-                    ? 'bg-blue-50 border-blue-500 text-blue-700 ring-2 ring-blue-500/20'
-                    : 'border-slate-200 text-slate-600 hover:bg-slate-50'
-                }`}
-              >
-                <Car className="w-5 h-5" />
-                <span>Car (${settings.carHourlyRate}/hr)</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setType('bus');
-                  setSlotId('');
-                }}
-                className={`p-3 rounded-xl border flex flex-col items-center gap-1.5 transition-all text-xs font-bold ${
-                  type === 'bus'
-                    ? 'bg-amber-50 border-amber-500 text-amber-700 ring-2 ring-amber-500/20'
-                    : 'border-slate-200 text-slate-600 hover:bg-slate-50'
-                }`}
-              >
-                <Bus className="w-5 h-5" />
-                <span>Bus (${settings.busHourlyRate}/hr)</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setType('bike');
-                  setSlotId('');
-                }}
-                className={`p-3 rounded-xl border flex flex-col items-center gap-1.5 transition-all text-xs font-bold ${
-                  type === 'bike'
-                    ? 'bg-purple-50 border-purple-500 text-purple-700 ring-2 ring-purple-500/20'
-                    : 'border-slate-200 text-slate-600 hover:bg-slate-50'
-                }`}
-              >
-                <Bike className="w-5 h-5" />
-                <span>Bike (${settings.bikeHourlyRate}/hr)</span>
-              </button>
+            <label className="text-xs font-semibold text-slate-700 block mb-1.5">
+              Vehicle Category
+            </label>
+            <div className="grid grid-cols-5 gap-1.5">
+              {categories.map((c) => {
+                const Icon = c.icon;
+                const active = type === c.id;
+                return (
+                  <button
+                    key={c.id}
+                    type="button"
+                    onClick={() => {
+                      setType(c.id);
+                      setSlotId('');
+                    }}
+                    className={`p-2 rounded-lg border flex flex-col items-center gap-1 text-[11px] font-semibold transition-colors ${
+                      active
+                        ? 'bg-blue-50 border-blue-600 text-blue-700'
+                        : 'border-slate-200 text-slate-600 hover:bg-slate-50'
+                    }`}
+                  >
+                    <Icon className="w-4 h-4" />
+                    <span>{c.label}</span>
+                    <span className="text-[10px] font-mono text-slate-500">${c.rate}/h</span>
+                  </button>
+                );
+              })}
             </div>
           </div>
 
-          {/* Assigned Slot Picker */}
           <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <label className="text-xs font-bold text-slate-700">Assign Parking Slot</label>
-              <span className="text-xs text-emerald-600 font-semibold">
+            <div className="flex items-center justify-between mb-1.5 text-xs">
+              <label className="font-semibold text-slate-700">Available Campus Slot</label>
+              <span className="text-emerald-600 font-semibold tabular-nums">
                 {availableSlots.length} available
               </span>
             </div>
 
             {availableSlots.length === 0 ? (
-              <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-xs font-medium">
-                No slots currently available for {type.toUpperCase()}!
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-xs space-y-2">
+                <p className="font-semibold">All {type.toUpperCase()} slots are currently occupied or reserved.</p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsParkModalOpen(false);
+                    setActiveTab('reservations');
+                  }}
+                  className="px-3 py-1.5 rounded-md bg-slate-900 text-white text-xs font-semibold"
+                >
+                  Join Smart Waitlist &rarr;
+                </button>
               </div>
             ) : (
               <select
                 value={slotId}
                 onChange={(e) => setSlotId(e.target.value)}
-                className="w-full px-3.5 py-2.5 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-blue-500 font-mono font-semibold"
+                className="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-lg font-mono font-semibold"
               >
                 {availableSlots.map((s) => (
                   <option key={s.id} value={s.id}>
-                    {s.slotNumber} • {s.floorName} {s.isEvCharging ? '⚡ (EV Charging)' : ''}
+                    {s.slotNumber} · {s.zoneName} {s.isEvCharging ? '(EV)' : ''}{' '}
+                    {s.isHandicapped ? '(Accessible)' : ''}
                   </option>
                 ))}
               </select>
             )}
           </div>
 
-          {/* License Plate Input + Quick Auto-Fill */}
           <div>
             <div className="flex items-center justify-between mb-1.5">
-              <label className="text-xs font-bold text-slate-700">License Registration Plate *</label>
+              <label className="text-xs font-semibold text-slate-700">License Plate *</label>
               <button
                 type="button"
-                onClick={handleGenerateSamplePlate}
-                className="text-[11px] font-semibold text-blue-600 hover:text-blue-700 flex items-center gap-1"
+                onClick={handleAutoSample}
+                className="text-[11px] font-semibold text-blue-600 hover:text-blue-700"
               >
-                <Sparkles className="w-3 h-3" /> Auto-fill Sample Plate
+                Generate Sample Plate
               </button>
             </div>
             <input
               type="text"
-              placeholder="e.g. CA-4829-KL"
+              placeholder="e.g. CA-8412-HP"
               value={licensePlate}
               onChange={(e) => setLicensePlate(e.target.value.toUpperCase())}
-              className="w-full px-3.5 py-2.5 text-sm font-mono font-bold bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-blue-500 uppercase placeholder:normal-case placeholder:font-normal"
+              className="w-full px-3.5 py-2 text-sm font-mono font-bold bg-slate-50 border border-slate-200 rounded-lg uppercase"
             />
           </div>
 
-          {/* Vehicle Model */}
           <div>
-            <label className="text-xs font-bold text-slate-700 block mb-1.5">Vehicle Make &amp; Model (Optional)</label>
+            <label className="text-xs font-semibold text-slate-700 block mb-1.5">
+              Vehicle Make &amp; Model (Optional)
+            </label>
             <input
               type="text"
-              placeholder="e.g. Toyota RAV4 (Silver)"
+              placeholder="e.g. Toyota RAV4 Hybrid"
               value={model}
               onChange={(e) => setModel(e.target.value)}
-              className="w-full px-3.5 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3.5 py-2 text-sm bg-slate-50 border border-slate-200 rounded-lg"
             />
           </div>
 
-          {/* Driver Name & Phone */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-xs font-bold text-slate-700 block mb-1.5">Driver Name</label>
+              <label className="text-xs font-semibold text-slate-700 block mb-1.5">Driver Name</label>
               <input
                 type="text"
-                placeholder="e.g. John Doe"
                 value={driverName}
                 onChange={(e) => setDriverName(e.target.value)}
-                className="w-full px-3.5 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-lg"
               />
             </div>
             <div>
-              <label className="text-xs font-bold text-slate-700 block mb-1.5">Contact Phone</label>
+              <label className="text-xs font-semibold text-slate-700 block mb-1.5">Phone</label>
               <input
                 type="text"
-                placeholder="+1 (555) 000-0000"
                 value={driverPhone}
                 onChange={(e) => setDriverPhone(e.target.value)}
-                className="w-full px-3.5 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-lg"
               />
             </div>
           </div>
 
-          {/* Action Buttons */}
-          <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-3">
+          <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2.5">
             <button
               type="button"
               onClick={() => setIsParkModalOpen(false)}
-              className="px-4 py-2.5 rounded-xl text-sm font-semibold text-slate-600 hover:bg-slate-100 transition-colors"
+              className="px-4 py-2 rounded-lg text-xs font-semibold text-slate-600 hover:bg-slate-100"
             >
               Cancel
             </button>
             <button
               type="submit"
-              disabled={availableSlots.length === 0}
-              className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 active:bg-blue-800 disabled:opacity-50 text-white font-bold text-sm shadow-xs transition-all"
+              disabled={availableSlots.length === 0 || submitting}
+              className="inline-flex items-center gap-1.5 px-5 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-semibold text-xs transition-colors"
             >
               <CheckCircle2 className="w-4 h-4" />
-              Confirm &amp; Issue Ticket
+              <span>{submitting ? 'Checking In...' : 'Confirm Check-In'}</span>
             </button>
           </div>
         </form>

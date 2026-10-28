@@ -1,98 +1,114 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   X,
-  Car,
-  Bus,
-  Bike,
-  Clock,
-  DollarSign,
-  User,
-  Phone,
-  Calendar,
   Zap,
   Accessibility,
   Wrench,
   CheckCircle2,
   LogOut,
   PlusCircle,
+  MapPin,
+  CalendarCheck,
+  Navigation,
 } from 'lucide-react';
 import { useParking } from '../../context/ParkingContext';
-import { ParkingSlot } from '../../types';
+import { CAMPUS_BUILDINGS } from '../../data/initialData';
 
 export const SlotDetailModal: React.FC = () => {
   const {
+    currentUser,
     selectedSlotForModal,
     setSelectedSlotForModal,
+    reservations,
     vacateSlot,
     toggleSlotMaintenance,
     setIsParkModalOpen,
     setPreselectedTypeForParkModal,
     setPreselectedSlotIdForParkModal,
+    setActiveTab,
+    setMapHighlightedSlotId,
+    setPreselectedSlotForReservation,
+    setLastCheckedInSlotId,
   } = useParking();
+
+  const [busy, setBusy] = useState(false);
 
   if (!selectedSlotForModal) return null;
 
   const slot = selectedSlotForModal;
-  const isOccupied = slot.status === 'occupied';
-  const isMaintenance = slot.status === 'maintenance';
-  const Icon = slot.vehicleType === 'car' ? Car : slot.vehicleType === 'bus' ? Bus : Bike;
+  const st = slot.status;
+  const isAdmin = currentUser.role === 'admin';
 
-  // Calculate duration & fee if occupied
+  const activeReservation = reservations.find(
+    (r) =>
+      r.slotId === slot.id &&
+      (r.status === 'confirmed' || r.status === 'checked_in')
+  );
+
+  const nearbyBuilding = CAMPUS_BUILDINGS.find((b) => b.id === slot.nearbyBuildingId);
+
   let durationFormatted = '0 mins';
   let accruedFee = 0;
-  if (isOccupied && slot.currentVehicle) {
+  if (st === 'occupied' && slot.currentVehicle) {
     const entryDate = new Date(slot.currentVehicle.entryTime);
-    const now = new Date();
-    const diffMs = Math.max(now.getTime() - entryDate.getTime(), 60000);
-    const diffMins = Math.round(diffMs / (1000 * 60));
+    const diffMs = Math.max(Date.now() - entryDate.getTime(), 60000);
+    const diffMins = Math.round(diffMs / 60000);
     const hours = Math.floor(diffMins / 60);
     const mins = diffMins % 60;
     durationFormatted = `${hours > 0 ? `${hours} hr ` : ''}${mins} min`;
-
     const hoursBilled = Math.max(diffMins / 60, 0.5);
     accruedFee = Math.round(hoursBilled * slot.currentVehicle.ratePerHour * 100) / 100;
   }
 
-  const handleCheckout = () => {
-    vacateSlot(slot.id);
+  const handleCheckout = async () => {
+    setBusy(true);
+    await vacateSlot(slot.id);
+    setBusy(false);
     setSelectedSlotForModal(null);
   };
 
   const handleParkHere = () => {
-    const sId = slot.id;
-    const vType = slot.vehicleType;
     setSelectedSlotForModal(null);
-    setPreselectedTypeForParkModal(vType);
-    setPreselectedSlotIdForParkModal(sId);
+    setPreselectedTypeForParkModal(slot.vehicleType);
+    setPreselectedSlotIdForParkModal(slot.id);
     setIsParkModalOpen(true);
   };
 
+  const handleReserveHere = () => {
+    setPreselectedSlotForReservation(slot.id);
+    setSelectedSlotForModal(null);
+    setActiveTab('reservations');
+  };
+
+  const handleShowOnMap = () => {
+    setMapHighlightedSlotId(slot.id);
+    setSelectedSlotForModal(null);
+    setActiveTab('campus-map');
+  };
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
-      <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl max-w-md w-full overflow-hidden animate-in zoom-in-95">
-        {/* Header */}
-        <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/70">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center font-mono font-bold text-sm">
-              {slot.slotNumber}
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60">
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-xl max-w-md w-full overflow-hidden">
+        <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+          <div>
+            <div className="flex items-center gap-2">
+              <h3 className="text-base font-bold text-slate-900 font-mono">Slot {slot.slotNumber}</h3>
+              <span className="text-xs text-slate-400">·</span>
+              <span
+                className={`text-xs font-semibold capitalize ${
+                  st === 'occupied'
+                    ? 'text-rose-600'
+                    : st === 'reserved'
+                    ? 'text-blue-600'
+                    : st === 'maintenance'
+                    ? 'text-amber-600'
+                    : 'text-emerald-600'
+                }`}
+              >
+                {st === 'maintenance' ? 'Temporarily Unavailable' : st}
+              </span>
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h3 className="text-base font-bold text-slate-900">Slot {slot.slotNumber}</h3>
-                <span
-                  className={`px-2 py-0.5 rounded-full text-xs font-bold ${
-                    isOccupied
-                      ? 'bg-rose-100 text-rose-800'
-                      : isMaintenance
-                      ? 'bg-amber-100 text-amber-800'
-                      : 'bg-emerald-100 text-emerald-800'
-                  }`}
-                >
-                  {isOccupied ? 'Occupied' : isMaintenance ? 'Maintenance' : 'Available'}
-                </span>
-              </div>
-              <p className="text-xs text-slate-500">{slot.floorName}</p>
-            </div>
+            <p className="text-xs text-slate-500 mt-0.5">{slot.zoneName}</p>
           </div>
 
           <button
@@ -103,120 +119,181 @@ export const SlotDetailModal: React.FC = () => {
           </button>
         </div>
 
-        {/* Body */}
-        <div className="p-6 space-y-4">
-          {/* Bay Amenities */}
-          <div className="flex items-center gap-2 flex-wrap text-xs">
-            <span className="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 font-semibold flex items-center gap-1.5">
-              <Icon className="w-3.5 h-3.5" />
-              <span className="capitalize">{slot.vehicleType} Slot</span>
-            </span>
-            {slot.isEvCharging && (
-              <span className="px-2.5 py-1 rounded-lg bg-amber-50 text-amber-700 border border-amber-200 font-semibold flex items-center gap-1">
-                <Zap className="w-3.5 h-3.5 text-amber-500" />
-                EV Supercharger Enabled
-              </span>
+        <div className="p-5 space-y-4">
+          {/* Campus Location & Nearby Buildings */}
+          <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs space-y-1">
+            <div className="font-semibold text-slate-800 flex items-center justify-between">
+              <span>Campus Location &amp; Landmark</span>
+              <span className="capitalize text-slate-500">{slot.vehicleType} Bay</span>
+            </div>
+            <p className="text-slate-600">{slot.nearbyLandmark}</p>
+            {nearbyBuilding && (
+              <p className="text-slate-500 tabular-nums">
+                Nearest Building: <strong>{nearbyBuilding.name}</strong> (
+                {slot.distanceToBuildings[nearbyBuilding.id]}m walk)
+              </p>
             )}
-            {slot.isHandicapped && (
-              <span className="px-2.5 py-1 rounded-lg bg-blue-50 text-blue-700 border border-blue-200 font-semibold flex items-center gap-1">
-                <Accessibility className="w-3.5 h-3.5 text-blue-500" />
-                Accessible Reserved
-              </span>
-            )}
+            <div className="flex items-center gap-3 pt-1 text-slate-600">
+              {slot.isEvCharging && (
+                <span className="inline-flex items-center gap-1 font-medium text-amber-700">
+                  <Zap className="w-3.5 h-3.5" /> EV Charger
+                </span>
+              )}
+              {slot.isHandicapped && (
+                <span className="inline-flex items-center gap-1 font-medium text-blue-700">
+                  <Accessibility className="w-3.5 h-3.5" /> Accessible Bay
+                </span>
+              )}
+            </div>
           </div>
 
-          {/* Occupied Vehicle Information */}
-          {isOccupied && slot.currentVehicle ? (
-            <div className="space-y-3 pt-2">
-              <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-3">
-                <div>
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
-                    Registered Vehicle
-                  </span>
-                  <div className="text-xl font-black font-mono text-slate-900 mt-0.5">
+          {st === 'occupied' && slot.currentVehicle ? (
+            <div className="space-y-3">
+              <div className="p-4 rounded-xl border border-slate-200 space-y-2.5 text-xs tabular-nums">
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-500">License Plate</span>
+                  <span className="font-mono font-bold text-sm text-slate-900">
                     {slot.currentVehicle.licensePlate}
-                  </div>
-                  <div className="text-xs text-slate-600 mt-0.5 font-medium">
-                    {slot.currentVehicle.model}
-                  </div>
+                  </span>
                 </div>
-
-                <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-200/60 text-xs">
-                  <div>
-                    <span className="text-slate-400 block text-[10px] uppercase font-semibold">Driver</span>
-                    <span className="font-bold text-slate-800">{slot.currentVehicle.driverName}</span>
-                  </div>
-                  <div>
-                    <span className="text-slate-400 block text-[10px] uppercase font-semibold">Contact</span>
-                    <span className="font-semibold text-slate-700">{slot.currentVehicle.driverPhone}</span>
-                  </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-500">Driver</span>
+                  <span className="font-semibold text-slate-800">
+                    {slot.currentVehicle.driverName}
+                  </span>
                 </div>
-
-                <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-200/60 text-xs">
-                  <div>
-                    <span className="text-slate-400 block text-[10px] uppercase font-semibold">Check-in Time</span>
-                    <span className="font-semibold text-slate-800">
-                      {new Date(slot.currentVehicle.entryTime).toLocaleTimeString([], {
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-slate-400 block text-[10px] uppercase font-semibold">Elapsed Duration</span>
-                    <span className="font-bold text-blue-600">{durationFormatted}</span>
-                  </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-500">Check-In Time</span>
+                  <span className="text-slate-800">
+                    {new Date(slot.currentVehicle.entryTime).toLocaleTimeString([], {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}
+                  </span>
                 </div>
-
-                <div className="p-3 bg-white rounded-xl border border-slate-200 flex items-center justify-between">
-                  <div>
-                    <span className="text-[10px] uppercase font-bold text-slate-400">Current Accrued Fee</span>
-                    <div className="text-base font-extrabold text-emerald-600">${accruedFee.toFixed(2)}</div>
-                  </div>
-                  <span className="text-xs text-slate-500 font-medium">
-                    Rate: ${slot.currentVehicle.ratePerHour.toFixed(2)}/hr
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-500">Elapsed / Accrued Fee</span>
+                  <span className="font-bold text-emerald-700">
+                    {durationFormatted} · ${accruedFee.toFixed(2)}
                   </span>
                 </div>
               </div>
 
-              {/* Checkout / Release Button */}
+              <div className="grid grid-cols-2 gap-2.5">
+                <button
+                  onClick={() => {
+                    setLastCheckedInSlotId(slot.id);
+                    setSelectedSlotForModal(null);
+                    setActiveTab('find-vehicle');
+                  }}
+                  className="flex items-center justify-center gap-1.5 py-2.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-800 font-semibold text-xs transition-colors"
+                >
+                  <Navigation className="w-3.5 h-3.5" />
+                  <span>Walking Route</span>
+                </button>
+                <button
+                  disabled={busy}
+                  onClick={handleCheckout}
+                  className="flex items-center justify-center gap-1.5 py-2.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-semibold text-xs transition-colors"
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                  <span>Checkout (${accruedFee.toFixed(2)})</span>
+                </button>
+              </div>
+            </div>
+          ) : st === 'reserved' ? (
+            <div className="space-y-3">
+              <div className="p-4 rounded-xl bg-blue-50/60 border border-blue-200 text-xs space-y-1.5">
+                <div className="font-bold text-blue-900 flex items-center gap-1.5">
+                  <CalendarCheck className="w-4 h-4 text-blue-600" />
+                  <span>Active Reservation Hold</span>
+                </div>
+                {activeReservation ? (
+                  <>
+                    <p className="text-blue-800">
+                      Reserved for <strong>{activeReservation.driverName}</strong> (
+                      <span className="font-mono">{activeReservation.licensePlate}</span>)
+                    </p>
+                    <p className="text-blue-700 font-mono">
+                      QR Pass: {activeReservation.qrPassCode}
+                    </p>
+                  </>
+                ) : (
+                  <p className="text-blue-800">Reserved for scheduled campus transit or booking.</p>
+                )}
+              </div>
+
               <button
-                onClick={handleCheckout}
-                className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-rose-600 hover:bg-rose-700 active:bg-rose-800 text-white font-bold text-sm shadow-xs transition-all"
+                onClick={() => {
+                  setSelectedSlotForModal(null);
+                  setActiveTab('reservations');
+                }}
+                className="w-full py-2.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs transition-colors"
               >
-                <LogOut className="w-4 h-4" />
-                Checkout &amp; Vacate Slot (${accruedFee.toFixed(2)})
+                Open QR Pass Check-In / Reservations
               </button>
             </div>
+          ) : st === 'maintenance' ? (
+            <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-900 space-y-1">
+              <div className="font-bold flex items-center gap-1.5">
+                <Wrench className="w-4 h-4 text-amber-700" />
+                <span>Temporarily Unavailable</span>
+              </div>
+              <p>{slot.maintenanceReason || 'Slot closed for scheduled campus maintenance.'}</p>
+            </div>
           ) : (
-            <div className="py-4 text-center space-y-3">
-              <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-2xl">
-                <CheckCircle2 className="w-8 h-8 text-emerald-600 mx-auto mb-1.5" />
-                <h4 className="text-sm font-bold text-emerald-900">Bay is Ready &amp; Vacant</h4>
-                <p className="text-xs text-emerald-700 mt-0.5">
-                  Slot {slot.slotNumber} is available for immediate vehicle assignment.
-                </p>
+            <div className="space-y-2.5">
+              <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-900 flex items-center gap-2.5">
+                <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+                <div>
+                  <div className="font-bold">Available for Check-In or Reservation</div>
+                  <div className="text-emerald-700">Slot {slot.slotNumber} is open now.</div>
+                </div>
               </div>
 
-              <button
-                onClick={handleParkHere}
-                className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-bold text-sm shadow-xs transition-all"
-              >
-                <PlusCircle className="w-4 h-4" />
-                Park a Vehicle Here
-              </button>
+              <div className="grid grid-cols-2 gap-2.5">
+                <button
+                  onClick={handleParkHere}
+                  className="flex items-center justify-center gap-1.5 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs transition-colors"
+                >
+                  <PlusCircle className="w-4 h-4" />
+                  <span>Check-In Now</span>
+                </button>
+                <button
+                  onClick={handleReserveHere}
+                  className="flex items-center justify-center gap-1.5 py-2.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white font-semibold text-xs transition-colors"
+                >
+                  <CalendarCheck className="w-4 h-4" />
+                  <span>Book QR Pass</span>
+                </button>
+              </div>
             </div>
           )}
 
-          {/* Maintenance toggle */}
-          <div className="pt-2 border-t border-slate-100 flex justify-between items-center text-xs">
+          {/* Footer actions */}
+          <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
             <button
-              onClick={() => toggleSlotMaintenance(slot.id)}
-              className="text-slate-500 hover:text-slate-800 flex items-center gap-1.5 font-medium"
+              onClick={handleShowOnMap}
+              className="text-blue-600 hover:text-blue-700 font-semibold flex items-center gap-1"
             >
-              <Wrench className="w-3.5 h-3.5" />
-              {isMaintenance ? 'Clear Maintenance (Set Available)' : 'Toggle Maintenance Mode'}
+              <MapPin className="w-3.5 h-3.5" />
+              <span>Locate on Campus Map</span>
             </button>
+
+            {isAdmin && st !== 'occupied' && (
+              <button
+                disabled={busy}
+                onClick={async () => {
+                  setBusy(true);
+                  await toggleSlotMaintenance(slot.id);
+                  setBusy(false);
+                }}
+                className="text-slate-600 hover:text-slate-900 flex items-center gap-1 font-medium"
+              >
+                <Wrench className="w-3.5 h-3.5" />
+                <span>{st === 'maintenance' ? 'Restore Available' : 'Set Unavailable'}</span>
+              </button>
+            )}
           </div>
         </div>
       </div>
